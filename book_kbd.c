@@ -46,12 +46,17 @@ static void send_key(uint8_t code);
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 
 void raise_interrupt(uint8_t code) {
-  //if interrupt is still running - we need to cancel it and sleep a bit to aknowledge
-  if (int_active) {
-      sleep_us(IRQ_TIME-(time_us_64() - int_start));
-      gpio_put(int_pin,0);
-      sleep_us(IRQ_TIME);
-      int_active = 0;
+
+  uint64_t the_time = time_us_64();
+  //complete current state
+  if ((the_time-int_start)<IRQ_TIME) {
+      sleep_us(IRQ_TIME-(the_time-int_start));
+      if (int_active) {
+          gpio_put(int_pin,0);
+          //i'm doing wrong here
+          sleep_us(IRQ_TIME);
+          int_active = 0;
+      }
   }
 
   printf("H-%X",code);
