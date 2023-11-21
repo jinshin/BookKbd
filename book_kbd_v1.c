@@ -7,14 +7,6 @@ Skeleton taken from TinyUSB example by Ha Thach (tinyusb.org)
 GPLv3
 */
 
-#define  DEBUG
-
-#ifdef DEBUG
-# define dprint(x) printf x
-#else
-# define dprint(x) do {} while (0)
-#endif
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,89 +22,119 @@ uint8_t  kbd_out_pins[8] = {2,3,4,5,6,7,8,9};
 uint8_t  kbd_in_pins[8] = {11,12,13,14,15,26,27,28};
 uint8_t  int_pin = 10;
 uint8_t  kbd_conn = 0;
+uint8_t  prev_code = 0;
+
+uint8_t  int1_state = 0;
+uint64_t prevclock = 0;
 
 //microseconds
 //original value was 6000
-//This also defines length of main loop 
-const uint64_t IRQ_TIME = 8000;
-const uint8_t FIRST_DELAY_CYCLES = 100;
-const uint8_t NEXT_DELAY_CYCLES = 10;
+const uint64_t IRQ_TIME = 2000;
+const uint64_t FIRST_DELAY = 600000;
+const uint64_t NEXT_DELAY = 60000;
 
-uint8_t rep_counter = 0;
+uint8_t int_active = 0;
+uint64_t int_start = 0;
 
-uint8_t last_key = 0;
+uint8_t pressed_key = 0;
 uint8_t repeat_key = 0;
+uint8_t first_repeat = 0;
+uint64_t key_time = 0;
+
+uint64_t high_time = 0;
+uint64_t low_time=0;
 
 static void send_key(uint8_t code);
 
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 
-uint8_t fifo[17];
-uint8_t fifo_ptr = 0;
+void raise_interrupt(uint8_t code) {
 
-//---------------------------
-uint8_t main_cycle(void) { 
-uint8_t code;
-  //Do we have something in FIFO?
-  if (fifo_ptr>0) {
-      code = fifo[fifo_ptr--];
-  } else code = last_key;
- 
-  if (!code) return 0;
-
-  if (rep_counter) rep_counter--;
-
-  if (code&0x80) {
-      if ((code&0x7F)==last_key) {
-          dprint(("Last key %X depressed\r\n",code&0x7F));
-          last_key = 0;
+  uint64_t the_time = time_us_64();
+  //complete current state
+  if ((the_time-int_start)<IRQ_TIME) {
+      sleep_us(IRQ_TIME-(the_time-int_start));
+      if (int_active) {
+          gpio_put(int_pin,0);
+          //i'm doing wrong here
+          sleep_us(IRQ_TIME);
+          low_time=time_us_64();
+          int_active = 0;
       }
-      dprint(("REL_%X ",code&0x7F));
-      return code;
-  } else {
-      if (code != last_key) {
-          repeat_key = code;
-          last_key = code;
-          for (uint8_t i=0; i<sizeof(non_rep); i++) if (code==non_rep[i]) repeat_key = 0;
-          if (repeat_key) { 
-              dprint(("FIR_%X ",code));
-              rep_counter = FIRST_DELAY_CYCLES;
-          } else {
-              dprint(("NOR_%X ",code));
-          }
-          return code;
+  }
+
+  printf("H-%lld-%X",(high_time-low_time)\1000,code);
+
+  //Set keyboard pins
+  for (int i=0;i<8;i++) {
+      (code&1) ? gpio_put(kbd_out_pins[i],1) : gpio_put(kbd_out_pins[i],0);
+      code = code>>1;
+  }
+  
+  gpio_put(int_pin,1);
+  int_start = time_us_64();
+  high_time = int_start;
+  int_active = 1;
+}
+
+void lower_interrupt(void) {
+  if (!int_active) return;
+  uint64_t i_time = time_us_64() - int_start;
+  if (i_time > IRQ_TIME) {
+      low_time=time_us_64();
+      gpio_put(int_pin,0);
+      int_active = 0;
+      printf("-L-%lld ",(low_time-high_time)/1000);
+      int_start = time_us_64();
+      low_time = int_start;
+  }
+}
+
+void key_repeat(void) {
+
+  if (!pressed_key) return;
+
+  if (pressed_key&0x80) {
+  //Process key release
+      if ((pressed_key&0x7F)==repeat_key) {
+      //Mimic original behaviour
+      //Last key repeats are not reset if other key released
+          raise_interrupt(pressed_key);
+          pressed_key = 0;
+          repeat_key = 0;	
       } else {
-          if (!repeat_key) return 0;
-          if (!rep_counter) {
-              dprint(("NER_%X ",code));
-              rep_counter = NEXT_DELAY_CYCLES;
-              return code;
-          } else return 0;
+      //Notify depress of other key, but keep pattern for currently pressed key         
+          raise_interrupt(pressed_key);
+          //Fixme
+          sleep_us(IRQ_TIME);
+          pressed_key = repeat_key;
+          key_time = time_us_64();
+      }
+  } else {
+          //if (pressed_key!=repeat_key) { repeat_key=pressed_key; raise_interrupt(); }
+  //Process key press
+      if (pressed_key!=repeat_key) {
+          first_repeat = 1;
+          key_time = time_us_64();
+          raise_interrupt(pressed_key);
+          repeat_key = pressed_key;
+      } else {
+          //Skip non-repeating keys
+          for (uint8_t i=0; i<sizeof(non_rep); i++) {
+              if (pressed_key==non_rep[i]) return;
+	  }
+	  //Do repeats
+          uint64_t elapsed_time = time_us_64() - key_time;
+          //No need to get further if delay less than minimum
+          if (elapsed_time < NEXT_DELAY ) return;
+          //Next repeat
+          if (!first_repeat) { key_time = time_us_64(); raise_interrupt(pressed_key); return; }
+          //First repeat
+          if (elapsed_time > FIRST_DELAY ) { key_time = time_us_64(); first_repeat=0; raise_interrupt(pressed_key); return; }
       }
   }
 }
 
-void clear_pins(void) {
-  for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
-  fifo_ptr = 0;
-  last_key = 0;
-} 
-
-void raise_interrupt(uint8_t code) {
-  //Set keyboard pins
-  //2Do - only if key changes
-  for (int i=0;i<8;i++) {
-      (code&1) ? gpio_put(kbd_out_pins[i],1) : gpio_put(kbd_out_pins[i],0);
-      code = code>>1;
-  }  
-  gpio_put(int_pin,1);
-  sleep_us(IRQ_TIME>>1);
-}
-
-void lower_interrupt(void) {
-    gpio_put(int_pin,0);
-    sleep_us(IRQ_TIME>>1);
-}
 
 void hid_app_task(void);
 void get_input(void);
@@ -140,7 +162,15 @@ int main(void)
       gpio_set_dir(kbd_in_pins[i],GPIO_IN);
   }
 
-tuh_init(BOARD_TUH_RHPORT);
+
+//Temp code to analyze
+//	gpio_init(15);
+//	gpio_set_dir(15,GPIO_IN);
+//-----
+
+  tuh_init(BOARD_TUH_RHPORT);
+
+prevclock = time_us_64();
 
 //Main loop
   while (true)
@@ -149,9 +179,10 @@ tuh_init(BOARD_TUH_RHPORT);
       //Built-in keyboard
       //External keyboard is processed in handlers
       get_input();
-      uint8_t code = main_cycle();
-      if (code) raise_interrupt(code);
+      //Process interrupt cycle
       lower_interrupt();
+      //Process key repeat cycle
+      key_repeat();
       //Free CPU a bit
       sleep_us(20);
   }
@@ -159,6 +190,17 @@ tuh_init(BOARD_TUH_RHPORT);
   return 0;
 
 }
+
+/*
+void send_interrupt() {
+  //Signal interrupt
+  gpio_put(int_pin,1);
+  //need to determine this time, in microseconds
+  //i've seen 6130us but that's way too much
+  sleep_us(1000) ;
+  gpio_put(int_pin,0);
+}
+*/
 
 void get_input(void) {
 /*
@@ -196,13 +238,11 @@ uint8_t code;
   if (gpio_get(kbd_in_pins[i])) code=code|0x80;
   }
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
+  if (prev_code!=code) {
+      printf("Key: %X\r\n", code);
+      prev_code = code;
+      send_key(code);
   }
-
 
 }
 
@@ -237,7 +277,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   gpio_init(16);
   gpio_put(16,1);
   kbd_conn = 1;
-  clear_pins();
+  pressed_key = 0;
+  repeat_key = 0;
   if(tuh_hid_interface_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD) {
     if ( !tuh_hid_receive_report(dev_addr, instance) )
     {
@@ -251,7 +292,8 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   board_led_write(0);
   gpio_put(16,0);
   kbd_conn = 0;
-  clear_pins();
+  pressed_key = 0;
+  repeat_key = 0;
   //printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
 }
 
@@ -323,12 +365,11 @@ static void send_key(uint8_t code)
      tuh_hid_set_report(kbd_addr,kbd_inst,0,HID_REPORT_TYPE_OUTPUT,&set_leds,1);
   }
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
-  }
+  //printf("S: %X ",code);
+
+  pressed_key = code;
+
+  //send_interrupt();
 
 }
 
