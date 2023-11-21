@@ -34,7 +34,7 @@ uint8_t  kbd_conn = 0;
 //microseconds
 //original value was 6000
 //This also defines length of main loop 
-const uint64_t IRQ_TIME = 8000;
+const uint64_t IRQ_TIME = 6000;
 const uint8_t FIRST_DELAY_CYCLES = 100;
 const uint8_t NEXT_DELAY_CYCLES = 10;
 
@@ -108,12 +108,10 @@ void raise_interrupt(uint8_t code) {
       code = code>>1;
   }  
   gpio_put(int_pin,1);
-  sleep_us(IRQ_TIME>>1);
 }
 
 void lower_interrupt(void) {
     gpio_put(int_pin,0);
-    sleep_us(IRQ_TIME>>1);
 }
 
 void hid_app_task(void);
@@ -153,9 +151,9 @@ tuh_init(BOARD_TUH_RHPORT);
       get_input();
       uint8_t code = main_cycle();
       if (code) raise_interrupt(code);
+      sleep_us(IRQ_TIME>>1);
       lower_interrupt();
-      //Free CPU a bit
-      sleep_us(20);
+      sleep_us(IRQ_TIME>>1);
   }
 
   return 0;
