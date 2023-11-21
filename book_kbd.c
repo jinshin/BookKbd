@@ -43,6 +43,8 @@ uint8_t rep_counter = 0;
 uint8_t last_key = 0;
 uint8_t repeat_key = 0;
 
+uint8_t local_key = 0;
+
 static void send_key(uint8_t code);
 
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
@@ -162,31 +164,13 @@ tuh_init(BOARD_TUH_RHPORT);
 
 void get_input(void) {
 /*
-if (!kbd_conn) {
-  uint8_t inp = gpio_get(15);
-	if (inp!=int1_state) {
-	uint64_t cclock = time_us_64();
-	   int1_state=inp;
-	   printf("Interrupt: %d, Delay: %llu us\r\n",inp,(cclock-prevclock));
-	prevclock = cclock;
-	}
-  }
-*/
-
-/*
 Native timings:
 6'100us - interrupt time
 620'700us - fist key repeat
 61'500us - next key repeat
 */
 
-/*
-Behaviour patterns:
-We hold a key - send interrupt, long delay, send interrupt, short delay, send interrupt, short, etc.
-Release same key - send interrupt
-Release key we press and still hold before current repeating key - send interrupt, continue send for current key
-*/
-
+//We can actually do
 if (kbd_conn) return;
 
 uint8_t code;
@@ -195,6 +179,10 @@ uint8_t code;
   code=code>>1;
   if (gpio_get(kbd_in_pins[i])) code=code|0x80;
   }
+
+  if (local_key == code) return;
+
+  local_key = code;
 
   //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
   if (fifo_ptr<17) {
