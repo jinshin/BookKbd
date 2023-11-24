@@ -49,15 +49,15 @@ static void send_key(uint8_t code);
 
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 
-uint8_t fifo[17];
-uint8_t fifo_ptr = 0;
+uint8_t lifo[17];
+uint8_t lifo_ptr = 0;
 
 //---------------------------
 uint8_t main_cycle(void) { 
 uint8_t code;
-  //Do we have something in FIFO?
-  if (fifo_ptr>0) {
-      code = fifo[fifo_ptr--];
+  //Do we have something in buffer?
+  if (lifo_ptr>0) {
+      code = lifo[lifo_ptr--];
   } else code = last_key;
  
   if (!code) return 0;
@@ -96,7 +96,7 @@ uint8_t code;
 
 void clear_pins(void) {
   for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
-  fifo_ptr = 0;
+  lifo_ptr = 0;
   last_key = 0;
 } 
 
@@ -183,8 +183,8 @@ uint8_t code;
   local_key = code;
 
   //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
+  if (lifo_ptr<17) {
+    lifo[++lifo_ptr] = code;
   } else {
       printf("Buffer full!\r\n");  
   }
@@ -309,9 +309,8 @@ static void send_key(uint8_t code)
      tuh_hid_set_report(kbd_addr,kbd_inst,0,HID_REPORT_TYPE_OUTPUT,&set_leds,1);
   }
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
+  if (lifo_ptr<17) {
+    lifo[++lifo_ptr] = code;
   } else {
       printf("Buffer full!\r\n");  
   }
