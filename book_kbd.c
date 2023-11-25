@@ -50,14 +50,20 @@ static void send_key(uint8_t code);
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 
 uint8_t fifo[17];
-uint8_t fifo_ptr = 0;
+uint8_t fifo_count = 0;
+
+uint8_t numlock_state = 0;
+uint8_t caps_state = 0;
+uint8_t scroll_state = 0;
 
 //---------------------------
 uint8_t main_cycle(void) { 
 uint8_t code;
-  //Do we have something in FIFO?
-  if (fifo_ptr>0) {
-      code = fifo[fifo_ptr--];
+  //I do understand this should be done with moving pointers :)
+  if (fifo_count>0) {
+      code = fifo[0];
+      fifo_count--;
+      for (uint8_t i=0; i<fifo_count; i++) fifo[i]=fifo[i+1];
   } else code = last_key;
  
   if (!code) return 0;
@@ -94,20 +100,31 @@ uint8_t code;
   }
 }
 
-void clear_pins(void) {
-  for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
-  fifo_ptr = 0;
-  last_key = 0;
+void put_key(uint8_t code) {
+  if (fifo_count<16) {
+      fifo[fifo_count++] = code;
+  } else {
+      printf("Buffer full!\r\n");  
+  }
+}
+
+void clear_state(void) {
+    numlock_state = 0;
+    caps_state = 0;
+    scroll_state = 0;
+    for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
+    fifo_count = 0;
+    last_key = 0;
 } 
 
 void raise_interrupt(uint8_t code) {
-  //Set keyboard pins
-  //2Do - only if key changes
-  for (int i=0;i<8;i++) {
-      (code&1) ? gpio_put(kbd_out_pins[i],1) : gpio_put(kbd_out_pins[i],0);
-      code = code>>1;
-  }  
-  gpio_put(int_pin,1);
+    //Set keyboard pins
+    //2Do - only if key changes
+    for (int i=0;i<8;i++) {
+        (code&1) ? gpio_put(kbd_out_pins[i],1) : gpio_put(kbd_out_pins[i],0);
+        code = code>>1;
+    }  
+    gpio_put(int_pin,1);
 }
 
 void lower_interrupt(void) {
@@ -182,13 +199,7 @@ uint8_t code;
 
   local_key = code;
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
-  }
-
+  put_key(code);
 
 }
 
@@ -220,10 +231,8 @@ void tuh_umount_cb(uint8_t dev_addr)
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
 //  printf("HID device address = %d, instance = %d is mounted\r\n", dev_addr, instance);
   board_led_write(1);
-  gpio_init(16);
-  gpio_put(16,1);
   kbd_conn = 1;
-  clear_pins();
+  clear_state();
   if(tuh_hid_interface_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD) {
     if ( !tuh_hid_receive_report(dev_addr, instance) )
     {
@@ -235,9 +244,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 // Invoked when device with hid interface is un-mounted
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   board_led_write(0);
-  gpio_put(16,0);
   kbd_conn = 0;
-  clear_pins();
+  clear_state();
   //printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
 }
 
@@ -274,10 +282,6 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 static void send_key(uint8_t code)
 {
 
-  static uint8_t numlock_state = 0;
-  static uint8_t caps_state = 0;
-  static uint8_t scroll_state = 0;
-
   static uint8_t set_leds = 0;
   //Skip zeros
   if (!(code&0x7F)) return;
@@ -309,12 +313,7 @@ static void send_key(uint8_t code)
      tuh_hid_set_report(kbd_addr,kbd_inst,0,HID_REPORT_TYPE_OUTPUT,&set_leds,1);
   }
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (fifo_ptr<17) {
-    fifo[++fifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
-  }
+  put_key(code);
 
 }
 
