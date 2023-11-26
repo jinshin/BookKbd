@@ -52,6 +52,10 @@ uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 uint8_t lifo[17];
 uint8_t lifo_ptr = 0;
 
+uint8_t numlock_state = 0;
+uint8_t caps_state = 0;
+uint8_t scroll_state = 0;
+
 //---------------------------
 uint8_t main_cycle(void) { 
 uint8_t code;
@@ -94,11 +98,14 @@ uint8_t code;
   }
 }
 
-void clear_pins(void) {
-  for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
-  lifo_ptr = 0;
-  last_key = 0;
-} 
+void clear_state(void) {
+    numlock_state = 0;
+    caps_state = 0;
+    scroll_state = 0;
+    for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
+    lifo_ptr = 0;
+    last_key = 0;
+}
 
 void raise_interrupt(uint8_t code) {
   //Set keyboard pins
@@ -220,10 +227,8 @@ void tuh_umount_cb(uint8_t dev_addr)
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
 //  printf("HID device address = %d, instance = %d is mounted\r\n", dev_addr, instance);
   board_led_write(1);
-  gpio_init(16);
-  gpio_put(16,1);
   kbd_conn = 1;
-  clear_pins();
+  clear_state();
   if(tuh_hid_interface_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD) {
     if ( !tuh_hid_receive_report(dev_addr, instance) )
     {
@@ -235,9 +240,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 // Invoked when device with hid interface is un-mounted
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   board_led_write(0);
-  gpio_put(16,0);
   kbd_conn = 0;
-  clear_pins();
+  clear_state();
   //printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
 }
 
@@ -273,10 +277,6 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 
 static void send_key(uint8_t code)
 {
-
-  static uint8_t numlock_state = 0;
-  static uint8_t caps_state = 0;
-  static uint8_t scroll_state = 0;
 
   static uint8_t set_leds = 0;
   //Skip zeros
