@@ -52,6 +52,10 @@ uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 uint8_t lifo[17];
 uint8_t lifo_ptr = 0;
 
+//For setting leds
+uint8_t kbd_addr;
+uint8_t kbd_inst;
+
 uint8_t numlock_state = 0;
 uint8_t caps_state = 0;
 uint8_t scroll_state = 0;
@@ -99,9 +103,14 @@ uint8_t code;
 }
 
 void clear_state(void) {
-    numlock_state = 0;
-    caps_state = 0;
-    scroll_state = 0;
+//    numlock_state = 0;
+//    caps_state = 0;
+//    scroll_state = 0;
+    static uint8_t set_leds;
+
+    set_leds = (scroll_state<<2)|(caps_state<<1)|numlock_state;
+    tuh_hid_set_report(kbd_addr,kbd_inst,0,HID_REPORT_TYPE_OUTPUT,&set_leds,1);
+
     for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
     lifo_ptr = 0;
     last_key = 0;
@@ -244,10 +253,6 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   clear_state();
   //printf("HID device address = %d, instance = %d is unmounted\r\n", dev_addr, instance);
 }
-
-//For setting leds
-uint8_t kbd_addr;
-uint8_t kbd_inst;
 
 // Invoked when received report from device via interrupt endpoint (key down and key up)
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
