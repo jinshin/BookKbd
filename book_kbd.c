@@ -34,7 +34,7 @@ uint8_t  kbd_conn = 0;
 //microseconds
 //original value was 6000
 //This also defines length of main loop 
-const uint64_t IRQ_TIME = 6000;
+const uint64_t IRQ_TIME = 7500;
 const uint8_t FIRST_DELAY_CYCLES = 100;
 const uint8_t NEXT_DELAY_CYCLES = 10;
 
@@ -138,9 +138,22 @@ int main(void)
   for (int i=0;i<8;i++) {
       gpio_init(kbd_in_pins[i]);
       gpio_set_dir(kbd_in_pins[i],GPIO_IN);
+      gpio_pull_up(kbd_in_pins[i]);
   }
 
+
+/*
+      raise_interrupt(0x7F);
+      sleep_us(IRQ_TIME);
+      lower_interrupt();
+      raise_interrupt(0xFF);
+      sleep_us(IRQ_TIME);
+      lower_interrupt();
+*/
+
 tuh_init(BOARD_TUH_RHPORT);
+
+
 
 //Main loop
   while (true)
@@ -168,10 +181,11 @@ Native timings:
 61'500us - next key repeat
 */
 
-//We can actually do
-if (kbd_conn) return;
+//We can actually do together
+//if (kbd_conn) return;
 
 uint8_t code;
+  code = 0;
   //recreate scancode from pins
   for (int i=0;i<8;i++) {
   code=code>>1;
