@@ -2,7 +2,7 @@
 Keyboard emulator for Book8088
 WIP
 Converts HID keyboard codes to PC XT scancodes
-(C) 2023 Serhii Liubshin
+(C) 2023-2024 Serhii Liubshin
 Skeleton taken from TinyUSB example by Ha Thach (tinyusb.org)
 GPLv3
 */
@@ -123,7 +123,7 @@ int main(void)
   board_init();
 
   printf("External keyboard support for Book8088\r\n");
-  printf("(C) 2023 Serhii Liubshin\r\n");
+  printf("(C) 2023-2024 Serhii Liubshin\r\n");
 
 //We use pins 2,3,4,5,6,7,8,9 for bits
 //Pin 10 - to signal interrupt
