@@ -7,7 +7,7 @@ Skeleton taken from TinyUSB example by Ha Thach (tinyusb.org)
 GPLv3
 */
 
-#define  DEBUG
+//#define  DEBUG
 
 #ifdef DEBUG
 # define dprint(x) printf x
@@ -34,11 +34,11 @@ uint8_t  kbd_conn = 0;
 //microseconds
 //original value was 6000
 //This also defines length of main loop 
-const uint64_t IRQ_TIME = 7500;
-const uint8_t FIRST_DELAY_CYCLES = 100;
-const uint8_t NEXT_DELAY_CYCLES = 10;
+const uint64_t KBD_CYCLE = 4000;
+const uint64_t FIRST_DELAY_CYCLES = 15;
+const uint64_t NEXT_DELAY_CYCLES = 2;
 
-uint8_t rep_counter = 0;
+uint64_t rep_counter = 0;
 
 uint8_t last_key = 0;
 uint8_t repeat_key = 0;
@@ -49,17 +49,34 @@ static void send_key(uint8_t code);
 
 uint8_t non_rep[] = {0x3A, 0x54, 0x46, 0x45, 0x1D, 0x38, 0x2A, 0x36};
 
-uint8_t lifo[17];
-uint8_t lifo_ptr = 0;
+uint8_t fifo[17];
+uint8_t fifo_count = 0;
+
+void fifo_put(uint8_t code) {
+  if (fifo_count<16) {
+      fifo[fifo_count++] = code;
+  } else {
+      printf("Buffer full!\r\n");  
+  }  
+}
+
+uint8_t fifo_get() {
+  uint8_t code;
+  if (fifo_count>0) {
+      code = fifo[0];
+      fifo_count--;
+      for (uint8_t i=0; i<fifo_count; i++) fifo[i]=fifo[i+1];
+  } else code = last_key;
+  return code;
+}
 
 //---------------------------
 uint8_t main_cycle(void) { 
 uint8_t code;
+
   //Do we have something in buffer?
-  if (lifo_ptr>0) {
-      code = lifo[lifo_ptr--];
-  } else code = last_key;
- 
+  code = fifo_get();
+
   if (!code) return 0;
 
   if (rep_counter) rep_counter--;
@@ -96,7 +113,7 @@ uint8_t code;
 
 void clear_pins(void) {
   for (int i=0;i<8;i++) gpio_put(kbd_out_pins[i],0);
-  lifo_ptr = 0;
+  fifo_count = 0;
   last_key = 0;
 } 
 
@@ -107,6 +124,7 @@ void raise_interrupt(uint8_t code) {
       (code&1) ? gpio_put(kbd_out_pins[i],1) : gpio_put(kbd_out_pins[i],0);
       code = code>>1;
   }  
+  sleep_us(10);
   gpio_put(int_pin,1);
 }
 
@@ -142,31 +160,35 @@ int main(void)
   }
 
 
-/*
-      raise_interrupt(0x7F);
-      sleep_us(IRQ_TIME);
-      lower_interrupt();
-      raise_interrupt(0xFF);
-      sleep_us(IRQ_TIME);
-      lower_interrupt();
-*/
-
 tuh_init(BOARD_TUH_RHPORT);
 
-
-
+//--------------------------------------------------
 //Main loop
+//--------------------------------------------------
   while (true)
   {
+
+      for (uint8_t i=0; i<5; i++) {
+      //External keyboard is processed in tinyusb handlers
       tuh_task();
       //Built-in keyboard
-      //External keyboard is processed in handlers
       get_input();
+      sleep_us(KBD_CYCLE);
+      }
+
       uint8_t code = main_cycle();
       if (code) raise_interrupt(code);
-      sleep_us(IRQ_TIME>>1);
+
+      for (uint8_t i=0; i<5; i++) {
+      //External keyboard is processed in tinyusb handlers
+      tuh_task();
+      //Built-in keyboard
+      get_input();
+      sleep_us(KBD_CYCLE);
+      }
+
       lower_interrupt();
-      sleep_us(IRQ_TIME>>1);
+
   }
 
   return 0;
@@ -196,13 +218,7 @@ uint8_t code;
 
   local_key = code;
 
-  //0 ptr means buffer empty, so we use 1-17 for 16 byte buffer
-  if (lifo_ptr<17) {
-    lifo[++lifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
-  }
-
+  fifo_put(code);
 
 }
 
@@ -323,11 +339,7 @@ static void send_key(uint8_t code)
      tuh_hid_set_report(kbd_addr,kbd_inst,0,HID_REPORT_TYPE_OUTPUT,&set_leds,1);
   }
 
-  if (lifo_ptr<17) {
-    lifo[++lifo_ptr] = code;
-  } else {
-      printf("Buffer full!\r\n");  
-  }
+  fifo_put(code);
 
 }
 
