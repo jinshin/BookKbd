@@ -32,8 +32,10 @@ uint8_t  int_pin = 10;
 uint8_t  kbd_conn = 0;
 
 //microseconds
-//original value was 6000
-//This also defines length of main loop 
+//This defines microseconds delay for scanning keyboard or precessing USB input
+//defaul value for Book was 6000
+//4000us = 4ms = 250 scans per second
+//But we send keys from buffer at 1/10 rate for Book to process them correctly.
 const uint64_t KBD_CYCLE = 4000;
 const uint64_t FIRST_DELAY_CYCLES = 15;
 const uint64_t NEXT_DELAY_CYCLES = 2;
