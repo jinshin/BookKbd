@@ -23,22 +23,33 @@ GPLv3
 #include "tusb.h"
 
 #include "hardware/gpio.h"
+#include "hardware/pio.h"
+
+#include "ws2812.pio.h"
+
+static inline void put_pixel(uint32_t pixel_grb) {
+    pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
+}
 
 #include "xt.h"
+//#include "wspio.h"
 
 uint8_t  kbd_out_pins[8] = {2,3,4,5,6,7,8,9};
 uint8_t  kbd_in_pins[8] = {11,12,13,14,15,26,27,28};
 uint8_t  int_pin = 10;
 uint8_t  kbd_conn = 0;
 
+uint8_t  led_pin = 16;
+
 //microseconds
 //This defines microseconds delay for scanning keyboard or precessing USB input
 //defaul value for Book was 6000
 //4000us = 4ms = 250 scans per second
 //But we send keys from buffer at 1/10 rate for Book to process them correctly.
-const uint64_t KBD_CYCLE = 4000;
-const uint64_t FIRST_DELAY_CYCLES = 15;
-const uint64_t NEXT_DELAY_CYCLES = 2;
+const uint64_t CORR = 1;
+const uint64_t KBD_CYCLE = 4000/CORR;
+const uint64_t FIRST_DELAY_CYCLES = 15*CORR;
+const uint64_t NEXT_DELAY_CYCLES = 2*CORR;
 
 uint64_t rep_counter = 0;
 
@@ -162,6 +173,20 @@ int main(void)
   }
 
 
+  gpio_init(led_pin);
+  gpio_set_dir(led_pin,GPIO_OUT);
+
+  gpio_put(led_pin,0);
+  sleep_us(200);
+
+  PIO pio = pio0;
+  int sm = 0;
+  uint offset = pio_add_program(pio, &ws2812_program);
+
+  ws2812_program_init(pio, sm, offset, led_pin, 800000, false);
+
+  put_pixel(0x00040000);
+
 tuh_init(BOARD_TUH_RHPORT);
 
 //--------------------------------------------------
@@ -208,19 +233,38 @@ Native timings:
 //We can actually do together
 //if (kbd_conn) return;
 
-uint8_t code;
+uint8_t code,post_fix;
   code = 0;
+  post_fix = 0;
   //recreate scancode from pins
   for (int i=0;i<8;i++) {
   code=code>>1;
   if (gpio_get(kbd_in_pins[i])) code=code|0x80;
   }
 
-  if (local_key == code) return;
+  //Fn
+  if ((code&0x7F) == 0x7C) return;
+  //Ignore bad key returns
+  if ((code&0x7F) == 0x7F) return;
+
+  //Fixups for Fn
+  //Simulate key release
+//  if (code==0x49) post_fix=code|0x80;
+//  if (code==0x51) post_fix=code|0x80;
+//  if (code==0x57) post_fix=code|0x80;
+//  if (code==0x58) post_fix=code|0x80;
+//  if (code==0x4F) post_fix=code|0x80;
+//  if (code==0x47) post_fix=code|0x80;
+//  if (code==0x44) post_fix=code|0x80;
+//  if (code==0x43) post_fix=code|0x80;
+
+  if (code==local_key) return;
 
   local_key = code;
 
   fifo_put(code);
+
+  if (post_fix) fifo_put(post_fix);
 
 }
 
@@ -252,8 +296,7 @@ void tuh_umount_cb(uint8_t dev_addr)
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
 //  printf("HID device address = %d, instance = %d is mounted\r\n", dev_addr, instance);
   board_led_write(1);
-  gpio_init(16);
-  gpio_put(16,1);
+  put_pixel(0x00040404);
   kbd_conn = 1;
   clear_pins();
   if(tuh_hid_interface_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD) {
@@ -267,6 +310,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 // Invoked when device with hid interface is un-mounted
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   board_led_write(0);
+  put_pixel(0x00040000);
   gpio_put(16,0);
   kbd_conn = 0;
   clear_pins();

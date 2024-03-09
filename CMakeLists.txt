@@ -13,6 +13,7 @@ pico_enable_stdio_uart(book_kbd 1)
 
 target_include_directories(book_kbd PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
-target_link_libraries(book_kbd pico_stdlib tinyusb_host tinyusb_board)
+target_link_libraries(book_kbd pico_stdlib tinyusb_host tinyusb_board hardware_pio)
 
 pico_add_extra_outputs(book_kbd)
+
